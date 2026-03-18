@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Resume Analyzer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333; min-height: 100vh;
+            display: flex; justify-content: center; padding: 30px 16px;
+        }
+        .app {
+            max-width: 720px; width: 100%;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .card {
+            background: #fff; border-radius: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,.15); padding: 24px;
+        }
+        h1 { text-align: center; font-size: 1.7rem; color: #1e1b4b; }
+        .subtitle { text-align: center; color: #6366f1; font-size: .85rem; margin-top: 4px; }
+
+        /* Upload area */
+        .upload-zone {
+            border: 2px dashed #c7d2fe; border-radius: 10px; padding: 20px;
+            text-align: center; transition: border-color .2s; background: #f5f3ff;
+        }
+        .upload-zone:hover { border-color: #6366f1; }
+        .upload-zone input { display: none; }
+        .upload-zone label {
+            cursor: pointer; color: #4f46e5; font-weight: 600;
+            display: inline-block; padding: 8px 18px; border-radius: 8px;
+            border: 1px solid #4f46e5; transition: all .2s;
+        }
+        .upload-zone label:hover { background: #4f46e5; color: #fff; }
+        .file-name { margin-top: 8px; font-size: .85rem; color: #64748b; }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 24px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: .95rem; font-weight: 600; color: #fff; background: #4f46e5;
+            transition: background .2s;
+        }
+        .btn:hover { background: #4338ca; }
+        .btn:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+        /* Status */
+        .status-bar {
+            margin-top: 12px; padding: 10px 14px; border-radius: 8px;
+            font-size: .88rem; display: none;
+        }
+        .status-ok { background: #ecfdf5; color: #065f46; display: block; }
+        .status-err { background: #fef2f2; color: #991b1b; display: block; }
+        .status-loading { background: #eef2ff; color: #3730a3; display: block; }
+
+        /* Preview */
+        .preview {
+            margin-top: 10px; padding: 10px 14px; border-radius: 8px;
+            background: #f8fafc; border: 1px solid #e2e8f0;
+            font-size: .82rem; color: #475569; max-height: 120px;
+            overflow-y: auto; white-space: pre-wrap; display: none;
+        }
+
+        /* Chat */
+        .chat-box {
+            max-height: 450px; overflow-y: auto; display: flex;
+            flex-direction: column; gap: 12px; padding: 4px 0;
+        }
+        .chat-msg {
+            padding: 12px 16px; border-radius: 12px; font-size: .93rem;
+            line-height: 1.6; white-space: pre-wrap; max-width: 92%;
+        }
+        .chat-q {
+            background: #eef2ff; color: #312e81; align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-a {
+            background: #f0fdf4; color: #14532d; align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .chat-a.error { background: #fef2f2; color: #991b1b; }
+        .chat-empty {
+            text-align: center; color: #94a3b8; font-size: .9rem; padding: 30px 0;
+        }
+
+        /* Input bar */
+        .input-bar { display: flex; gap: 8px; margin-top: 8px; }
+        .input-bar input {
+            flex: 1; padding: 11px 14px; border: 1px solid #d1d5db;
+            border-radius: 10px; font-size: .95rem; outline: none;
+        }
+        .input-bar input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #a5b4fc;
+            border-top-color: #4f46e5; border-radius: 50%; animation: spin .6s linear infinite;
+            vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+        .suggested-q { font-size: .8rem; color: #6366f1; cursor: pointer; padding: 4px 10px;
+            border: 1px solid #c7d2fe; border-radius: 16px; white-space: nowrap; }
+        .suggested-q:hover { background: #eef2ff; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- Header -->
+    <div class="card">
+        <h1>AI Resume Analyzer</h1>
+        <p class="subtitle">Powered by Endee vector database abstraction &bull; Local RAG Pipeline</p>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card">
+        <div class="upload-zone" id="dropZone">
+            <input type="file" id="resume" accept=".pdf">
+            <label for="resume">Choose PDF Resume</label>
+            <div class="file-name" id="fileName">No file selected</div>
+        </div>
+        <div class="row">
+            <button class="btn" id="uploadBtn" onclick="uploadResume()">Upload &amp; Analyze</button>
+        </div>
+        <div id="status" class="status-bar"></div>
+        <div id="preview" class="preview"></div>
+    </div>
+
+    <!-- Chat Card -->
+    <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div style="font-weight:600;margin-bottom:8px;">Ask anything about the resume</div>
+        <div class="chat-box" id="chatBox">
+            <div class="chat-empty" id="chatEmpty">Upload a resume and start asking questions!</div>
+        </div>
+        <div class="row" style="flex-wrap:wrap;margin-top:6px;">
+            <span class="suggested-q" onclick="fillQ(this)">What are the skills?</span>
+            <span class="suggested-q" onclick="fillQ(this)">Candidate name?</span>
+            <span class="suggested-q" onclick="fillQ(this)">Education details?</span>
+            <span class="suggested-q" onclick="fillQ(this)">Work experience?</span>
+            <span class="suggested-q" onclick="fillQ(this)">Contact information?</span>
+            <span class="suggested-q" onclick="fillQ(this)">Projects done?</span>
+        </div>
+        <div class="input-bar">
+            <input type="text" id="question" placeholder="e.g. What are the candidate's skills?"
+                   onkeydown="if(event.key==='Enter')askQuestion()">
+            <button class="btn" id="askBtn" onclick="askQuestion()">Ask</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('resume').addEventListener('change', function() {
+        document.getElementById('fileName').textContent =
+            this.files.length ? this.files[0].name : 'No file selected';
+    });
+
+    const dz = document.getElementById('dropZone');
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = '#4f46e5'; });
+    dz.addEventListener('dragleave', () => { dz.style.borderColor = '#c7d2fe'; });
+    dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.style.borderColor = '#c7d2fe';
+        if (e.dataTransfer.files.length && e.dataTransfer.files[0].type === 'application/pdf') {
+            document.getElementById('resume').files = e.dataTransfer.files;
+            document.getElementById('fileName').textContent = e.dataTransfer.files[0].name;
+        }
+    });
+
+    function setStatus(msg, type) {
+        const el = document.getElementById('status');
+        el.className = 'status-bar status-' + type;
+        el.innerHTML = (type === 'loading' ? '<span class="spinner"></span>' : '') + msg;
+    }
+
+    function fillQ(el) {
+        document.getElementById('question').value = el.textContent;
+        document.getElementById('question').focus();
+    }
+
+    function addChat(text, type) {
+        const empty = document.getElementById('chatEmpty');
+        if (empty) empty.remove();
+        const box = document.getElementById('chatBox');
+        const div = document.createElement('div');
+        div.className = 'chat-msg ' + type;
+        div.textContent = text;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+        return div;
+    }
+
+    async function uploadResume() {
+        const fileInput = document.getElementById('resume');
+        const btn = document.getElementById('uploadBtn');
+        const preview = document.getElementById('preview');
+        if (!fileInput.files.length) { alert('Please select a PDF file.'); return; }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        setStatus('Uploading and processing resume…', 'loading');
+        preview.style.display = 'none';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            setStatus(data.message, data.status === 'ok' ? 'ok' : 'err');
+            if (data.status === 'ok') {
+                const box = document.getElementById('chatBox');
+                box.innerHTML = '<div class="chat-empty" id="chatEmpty">Resume loaded! Ask your first question.</div>';
+                if (data.preview) {
+                    preview.textContent = data.preview + '…';
+                    preview.style.display = 'block';
+                }
+            }
+        } catch (e) {
+            setStatus('Upload failed: ' + e.message, 'err');
+        } finally { btn.disabled = false; }
+    }
+
+    async function askQuestion() {
+        const qInput = document.getElementById('question');
+        const btn = document.getElementById('askBtn');
+        const q = qInput.value.trim();
+        if (!q) { alert('Please enter a question.'); return; }
+
+        addChat(q, 'chat-q');
+        qInput.value = '';
+        const thinking = addChat('Thinking…', 'chat-a');
+        thinking.innerHTML = '<span class="spinner"></span>Thinking…';
+        btn.disabled = true;
+
+        try {
+            const formData = new FormData();
+            formData.append('question', q);
+            const res = await fetch('/ask', { method: 'POST', body: formData });
+            const data = await res.json();
+            thinking.textContent = data.answer;
+        } catch (e) {
+            thinking.textContent = 'Error: ' + e.message;
+            thinking.classList.add('error');
+        } finally { btn.disabled = false; qInput.focus(); }
+    }
+</script>
+</body>
+</html>

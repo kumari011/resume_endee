@@ -1,0 +1,41 @@
+Build a simple AI Resume Analyzer with web UI using FastAPI.
+
+Requirements:
+
+1. Web UI:
+- Single HTML page
+- Upload resume (PDF)
+- Input question
+- Show answer
+
+2. Backend (FastAPI):
+- Route "/" → serve HTML page
+- Route "/upload" → upload PDF and extract text
+- Route "/ask" → answer user question
+
+3. Resume Processing:
+- Read PDF using pypdf
+- Split text into chunks
+
+4. Vector Store:
+- Create EndeeVectorStore class
+- Store embeddings of resume text
+- Search similar chunks
+
+5. Embeddings:
+- Use sentence-transformers (all-MiniLM-L6-v2)
+
+6. RAG:
+- Retrieve relevant chunks
+- Generate answer from those chunks
+
+7. Keep it simple and working
+
+8. Mention Endee as vector database abstraction
+
+Generate full working code for:
+- app.py
+- vector_store.py
+- resume_reader.py
+- qa_model.py
+- index.html

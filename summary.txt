@@ -1,0 +1,235 @@
+================================================================================
+              AI RESUME ANALYZER — PROJECT DEVELOPMENT SUMMARY
+================================================================================
+
+Project: AI Resume Analyzer with Web UI
+Stack:   Python, FastAPI, Sentence-Transformers, Flan-T5-Large, pdfplumber
+Vector:  Endee-inspired vector database abstraction (EndeeVectorStore)
+
+================================================================================
+PHASE 1: INITIAL SCAFFOLD (Full Project Setup)
+================================================================================
+
+Goal: Build a working AI Resume Analyzer from scratch based on prompt.txt.
+
+Files Created (all were empty):
+  1. resume_reader.py  — PDF text extraction and chunking
+  2. vector_store.py   — EndeeVectorStore class for embeddings + search
+  3. qa_model.py       — Question-answering model
+  4. app.py            — FastAPI backend with routes
+  5. templates/index.html — Single-page web UI
+  6. requirements.txt  — Python dependencies
+
+Initial Implementation:
+  - resume_reader.py: Used pypdf (PdfReader) to extract text, split into
+    overlapping word-level chunks (300 words, 50 overlap).
+  - vector_store.py: EndeeVectorStore class using sentence-transformers
+    (all-MiniLM-L6-v2) for embeddings. Stored chunks + numpy embeddings.
+    Search via cosine similarity (dot product on normalized vectors).
+  - qa_model.py: Used transformers pipeline("question-answering") with
+    deepset/roberta-base-squad2 (extractive QA model).
+  - app.py: FastAPI with 3 routes:
+      GET  /       → serve index.html
+      POST /upload → upload PDF, extract text, chunk, embed, store
+      POST /ask    → search relevant chunks, run QA, return answer
+  - index.html: Simple form with PDF upload, question input, answer display.
+  - requirements.txt: fastapi, uvicorn, python-multipart, jinja2, pypdf,
+    sentence-transformers, transformers, torch, numpy.
+
+Dependencies installed via: python -m pip install -r requirements.txt
+(pip was not on PATH, so used python -m pip instead)
+
+Server started: python app.py → uvicorn on http://127.0.0.1:8000
+
+================================================================================
+PHASE 2: FIX — transformers v5.3.0 removed "question-answering" pipeline
+================================================================================
+
+Problem: When asking a question, server returned 500 Internal Server Error.
+  KeyError: "Unknown task question-answering"
+  transformers v5.3.0 dropped the "question-answering" pipeline task.
+
+Fix: Rewrote qa_model.py to use AutoModelForQuestionAnswering and
+  AutoTokenizer directly (bypassing the deleted pipeline).
+  - Manual tokenization, forward pass, argmax on start/end logits.
+  - Score = start_logit + end_logit of best span.
+  - Threshold: score < 0.5 → "couldn't find answer".
+
+================================================================================
+PHASE 3: FIX — Wrong/empty answers from extractive QA
+================================================================================
+
+Problem: Model returned empty or wrong answers.
+  - SQuAD2 model uses CLS token (index 0) to signal "no answer".
+  - The code was picking CLS as best span → empty decoded text.
+  - Joining all chunks into one context truncated at 512 tokens, losing data.
+
+Fix:
+  - Explicitly skip CLS token when finding best start/end span.
+  - Compare span_score vs cls_score (no-answer score).
+  - Changed from single-context to per-chunk querying: run QA on each
+    chunk independently, return the best answer across all chunks.
+
+================================================================================
+PHASE 4: FIX — Garbled text and incorrect answers
+================================================================================
+
+Problem: PDF extraction produced spaced-out characters:
+   "T E C H N I C A L S K I L L S" instead of "TECHNICAL SKILLS"
+  This confused both the vector search (wrong chunk retrieval) and the
+  extractive QA model (copied garbled spans as answers).
+  Also, extractive QA (roberta-squad2) could only copy spans from text,
+  not reason or compose answers — fundamentally limited.
+
+Fixes Applied:
+  a) Text Cleaning (resume_reader.py):
+     - Added regex to detect spaced-out letters: r"\b(?:[A-Za-z] ){2,}[A-Za-z]\b"
+     - Collapse them: "T E C H N I C A L" → "TECHNICAL"
+     - Normalize whitespace.
+
+  b) Switched QA Model (qa_model.py):
+     - Replaced extractive roberta-squad2 with generative google/flan-t5-base.
+     - Uses AutoModelForSeq2SeqLM + AutoTokenizer.
+     - Generates answers (can compose, summarize, list) instead of copying spans.
+     - Prompt: "Based on the following resume, answer the question in detail..."
+     - Beam search (num_beams=4), max 256 new tokens.
+
+  c) Reduced chunk size from 300 → 200 words for more focused retrieval.
+  d) Installed sentencepiece (required by Flan-T5 tokenizer).
+
+================================================================================
+PHASE 5: GROQ API INTEGRATION (Later Removed)
+================================================================================
+
+Goal: User wanted "next level" answers for any type of question.
+
+Added (temporarily):
+  - Groq API integration (Llama 3.3 70B) for high-quality cloud answers.
+  - Local Flan-T5-Large as fallback when no API key is set.
+  - API key input in the web UI.
+  - Chat-style UI with conversation history.
+  - Drag & drop PDF upload.
+  - Suggested question buttons.
+  - Mode badges (Groq/Local) on answers.
+  - httpx dependency for API calls.
+
+================================================================================
+PHASE 6: FINAL VERSION — Fully Local, No API Keys
+================================================================================
+
+User requested: Remove all API key stuff. Make it work locally with better
+text extraction, better chunking, better answers — no external APIs.
+
+Changes Made:
+
+1. resume_reader.py — MAJOR REWRITE
+   Before: pypdf + basic spaced-text fix + fixed 200-word chunks
+   After:
+   - Switched to pdfplumber (far superior for complex PDF layouts, tables,
+     columns, multi-column resumes).
+   - Layout-aware extraction: pdfplumber.open(...).extract_text(layout=True)
+   - Spaced-text collapse regex retained.
+   - Whitespace normalization preserving meaningful line breaks.
+   - SECTION-AWARE CHUNKING: Detects resume section headings using regex:
+     (Skills, Education, Experience, Projects, Certifications, etc.)
+     Each section becomes one chunk → semantically coherent chunks.
+   - If sections not detected, falls back to 150-word overlapping chunks.
+   - Long sections (>250 words) are sub-split automatically.
+   - 30+ section heading patterns supported.
+
+2. vector_store.py — IMPROVED
+   - Increased default top_k from 3 → 5.
+   - Added relevance threshold: only return chunks with score > 0.05.
+   - Added get_all_chunks() method for full-context access.
+
+3. qa_model.py — REWRITTEN (Fully Local)
+   - Removed ALL Groq/API code (httpx, API URL, API key handling).
+   - Model: google/flan-t5-large (780M params, ~3GB, runs locally).
+   - Better prompt engineering:
+     "You are analyzing a candidate's resume. Answer the question
+      accurately and in detail based only on the resume content below."
+   - Two-pass answer strategy:
+     Pass 1: Answer from top relevant chunks (focused context).
+     Pass 2: If answer is too short (<3 words), retry with full resume
+             text (truncated to 600 words to fit model window).
+   - Added no_repeat_ngram_size=3 to avoid repetitive generation.
+   - max_new_tokens=300.
+
+4. app.py — SIMPLIFIED
+   - Removed api_key parameter from /ask route.
+   - Returns plain {answer: ...} instead of {answer, mode}.
+   - Upload response includes text preview (first 500 chars).
+
+5. templates/index.html — CLEANED UP
+   - Removed ALL API key UI (toggle, input, save button, status).
+   - Removed mode badges (Groq/Local).
+   - Kept chat-style UI, drag & drop, suggested questions.
+   - Added text preview after upload (shows first 500 chars of extracted text).
+   - Added more suggested questions: Contact info, Projects done.
+   - Subtitle: "Local RAG Pipeline" instead of just "RAG Pipeline".
+
+6. requirements.txt — UPDATED
+   - Removed: pypdf, httpx
+   - Added: pdfplumber
+   - Final list: fastapi, uvicorn[standard], python-multipart, jinja2,
+     pdfplumber, sentence-transformers, transformers, torch, numpy,
+     sentencepiece
+
+================================================================================
+ARCHITECTURE (Final)
+================================================================================
+
+  User uploads PDF
+       │
+       ▼
+  pdfplumber extracts text (layout-aware)
+       │
+       ▼
+  Clean text (collapse spaced chars, normalize whitespace)
+       │
+       ▼
+  Section-aware chunking (split by Skills, Education, Experience, etc.)
+       │
+       ▼
+  Sentence-Transformers (all-MiniLM-L6-v2) encodes chunks → embeddings
+       │
+       ▼
+  EndeeVectorStore stores chunks + embeddings (cosine similarity search)
+       │
+       ▼
+  User asks question
+       │
+       ▼
+  Vector search → top 5 most relevant chunks
+       │
+       ▼
+  Flan-T5-Large generates answer from chunks (+ full text fallback)
+       │
+       ▼
+  Answer displayed in chat UI
+
+================================================================================
+TECHNOLOGY STACK
+================================================================================
+
+  Backend:    FastAPI + Uvicorn
+  PDF:        pdfplumber (layout-aware extraction)
+  Embeddings: sentence-transformers / all-MiniLM-L6-v2
+  Vector DB:  EndeeVectorStore (custom, Endee-inspired abstraction)
+  QA Model:   google/flan-t5-large (780M params, generative)
+  Frontend:   Jinja2 + vanilla HTML/CSS/JS
+  Tokenizer:  sentencepiece (for Flan-T5)
+
+================================================================================
+FILES IN PROJECT
+================================================================================
+
+  app.py              — FastAPI server (3 routes: /, /upload, /ask)
+  resume_reader.py    — PDF extraction + section-aware chunking
+  vector_store.py     — EndeeVectorStore (embed, store, search)
+  qa_model.py         — Flan-T5-Large QA (two-pass answering)
+  templates/index.html — Chat-style web UI
+  requirements.txt    — Python dependencies
+  prompt.txt          — Original project requirements
+
+================================================================================

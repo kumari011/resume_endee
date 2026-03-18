@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+jinja2
+pdfplumber
+sentence-transformers
+transformers
+torch
+numpy
+sentencepiece
+
